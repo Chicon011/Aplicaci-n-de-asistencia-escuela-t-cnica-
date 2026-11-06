@@ -1,0 +1,6 @@
+{
+  "name": "EduAsistencia - Control de Cursos y Asistencia",
+  "description": "Sistema de gestión escolar para administrar y controlar la asistencia de estudiantes de 1.º, 2.º y 3.º año, selección de cursos y divisiones, consulta de alumnos y creación de nuevas divisiones.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,28 @@
+# =====================================================================
+# EduAsistencia - Blueprint de Despliegue en Render
+# Ejecución Node.js + Express.js y Base de Datos PostgreSQL
+# =====================================================================
+
+services:
+  - type: web
+    name: edu-asistencia-app
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: edu-asistencia-db
+          property: connectionString
+
+databases:
+  - name: edu-asistencia-db
+    databaseName: edu_asistencia
+    user: edu_admin
+    plan: free
