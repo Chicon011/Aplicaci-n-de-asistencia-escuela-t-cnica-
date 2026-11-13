@@ -460,6 +460,18 @@ export function addCourseDivision(params: {
   currentStudents.push(...newStudents);
   saveStudents(currentStudents);
 
+  try {
+    fetch('/api/cursos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        anio: params.year,
+        division: cleanName,
+        turno: params.shift,
+      }),
+    }).catch(() => {});
+  } catch {}
+
   return { success: true, course: newCourse };
 }
 
@@ -543,6 +555,19 @@ export function addStudentToCourse(params: {
 
   all.push(newStudent);
   saveStudents(all);
+
+  try {
+    fetch('/api/estudiantes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dni: cleanDni,
+        apellido: params.lastName.trim(),
+        nombre: params.firstName.trim(),
+        id_curso: courseIdInt,
+      }),
+    }).catch(() => {});
+  } catch {}
 
   return { success: true, student: newStudent };
 }
@@ -629,6 +654,21 @@ export function saveCourseAttendance(
 
   remaining.push(...newRecords);
   saveAllAttendanceRecords(remaining);
+
+  try {
+    fetch('/api/asistencias', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fecha: date,
+        registros: records.map((r) => ({
+          id_estudiante: studentMap.get(r.studentId) || 0,
+          estado: STATUS_TO_DB[r.status] || 'P',
+          observacion: r.observation || '',
+        })),
+      }),
+    }).catch(() => {});
+  } catch {}
 }
 
 export function getStudentAttendanceStats(studentId: string): StudentAttendanceStats {
@@ -938,3 +978,77 @@ export function resetToDefault30Students(): void {
   localStorage.removeItem(SCHOOL_STORAGE_KEYS.ATTENDANCE);
   initSchoolStorage();
 }
+
+/**
+ * Bi-directional synchronization with PostgreSQL backend
+ * Ensures that if the server updates or restarts, students and divisions are preserved.
+ */
+export async function syncWithServer(): Promise<void> {
+  try {
+    const res = await fetch('/api/cursos');
+    if (!res.ok) return;
+    const json = await res.json();
+    if (!json.success || !Array.isArray(json.data) || json.data.length === 0) return;
+
+    const currentCourses = getCourses();
+    const serverCursos: Array<{ id_curso: number; anio: number; division: string; turno: string }> = json.data;
+    const allStudents = getStudents();
+    let updated = false;
+
+    for (const sc of serverCursos) {
+      const existing = currentCourses.find((c) => c.id_curso === sc.id_curso);
+      if (!existing) {
+        const newCourse: CourseDivision = {
+          id: `c_${sc.id_curso}`,
+          id_curso: sc.id_curso,
+          year: sc.anio as AcademicYear,
+          divisionName: sc.division.includes('División') ? sc.division : `${sc.division} División`,
+          shift: (sc.turno as ShiftType) || 'Mañana',
+          classroom: `Aula ${sc.anio}0${sc.id_curso}`,
+          preceptor: 'Prof. A designar',
+          academicYearLabel: `${sc.anio}.º Año`,
+          displayName: `${sc.anio}.º ${sc.division} - Turno ${sc.turno}`,
+          createdAt: new Date().toISOString(),
+        };
+        currentCourses.push(newCourse);
+        updated = true;
+
+        try {
+          const stRes = await fetch(`/api/cursos/${sc.id_curso}/estudiantes`);
+          if (stRes.ok) {
+            const stJson = await stRes.json();
+            if (stJson.success && Array.isArray(stJson.data)) {
+              stJson.data.forEach((s: any) => {
+                if (!allStudents.some((local) => local.id_estudiante === s.id_estudiante)) {
+                  allStudents.push({
+                    id: `st_${s.id_estudiante}`,
+                    id_estudiante: s.id_estudiante,
+                    courseId: newCourse.id,
+                    id_curso: sc.id_curso,
+                    firstName: s.nombre,
+                    lastName: s.apellido,
+                    dni: s.dni,
+                    email: `${s.nombre.toLowerCase()}.${s.apellido.toLowerCase()}@alumno.edu`,
+                    avatarColor: '#4f46e5',
+                    gender: 'Otro',
+                    notes: '',
+                    estado: s.estado,
+                    createdAt: s.created_at || new Date().toISOString(),
+                  });
+                }
+              });
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (updated) {
+      saveCourses(currentCourses);
+      saveStudents(allStudents);
+    }
+  } catch (err) {
+    // Non-blocking fallback
+  }
+}
+

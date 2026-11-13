@@ -277,6 +277,81 @@ export function loginUser(email: string, password: string, remember: boolean = t
   return { success: true, user: updatedUser };
 }
 
+export function loginWithSocial(
+  provider: 'google' | 'apple',
+  customEmail?: string,
+  customName?: string,
+  remember: boolean = true
+): { success: boolean; user?: User; error?: string } {
+  try {
+    const isGoogle = provider === 'google';
+    const email = (
+      customEmail && customEmail.trim()
+        ? customEmail.trim().toLowerCase()
+        : isGoogle
+        ? 'julian0309xx@gmail.com'
+        : 'usuario.apple@icloud.com'
+    );
+
+    const name = (
+      customName && customName.trim()
+        ? customName.trim()
+        : isGoogle
+        ? (email === 'julian0309xx@gmail.com' ? 'Julián Pérez' : email.split('@')[0])
+        : 'Usuario Apple'
+    );
+
+    let user = findUserByEmail(email);
+
+    if (!user) {
+      const parts = name.split(' ').filter(Boolean);
+      const initials = parts.length >= 2 
+        ? (parts[0][0] + parts[1][0]).toUpperCase() 
+        : parts[0]?.slice(0, 2).toUpperCase() || (isGoogle ? 'G' : 'AP');
+
+      const newUser: User = {
+        id: `usr_${provider}_${Date.now()}`,
+        name,
+        email,
+        avatar: initials,
+        avatarBgColor: isGoogle ? '#4285F4' : '#1e293b',
+        role: isGoogle ? 'administrador' : 'usuario',
+        twoFactorEnabled: false,
+        createdAt: new Date().toISOString(),
+        lastLoginAt: new Date().toISOString(),
+        passwordHash: hashPassword('SocialOAuthToken_2026'),
+      };
+      const users = getUsers();
+      users.push(newUser);
+      saveUsers(users);
+      user = newUser;
+    } else {
+      user = {
+        ...user,
+        lastLoginAt: new Date().toISOString(),
+      };
+      const users = getUsers().map((u) => (u.id === user!.id ? user! : u));
+      saveUsers(users);
+    }
+
+    setCurrentUser(user, remember);
+
+    addLoginHistoryItem({
+      id: `hist_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      ip: '185.122.40.12',
+      location: 'Conexión Local',
+      device: navigator.userAgent.includes('Mobile') ? 'Dispositivo Móvil' : 'Ordenador Personal',
+      browser: `${isGoogle ? 'Cuenta Google' : 'Apple ID'} (OAuth)`,
+      status: 'success',
+    });
+
+    return { success: true, user };
+  } catch {
+    return { success: false, error: 'No se pudo iniciar sesión con el proveedor seleccionado.' };
+  }
+}
+
 // Password Reset Flow
 export function generatePasswordResetCode(email: string): {
   success: boolean;

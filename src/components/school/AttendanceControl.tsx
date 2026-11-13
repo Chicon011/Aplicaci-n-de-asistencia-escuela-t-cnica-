@@ -21,6 +21,9 @@ import {
   ListFilter,
   MessageSquare,
   Sparkles,
+  Minus,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import { CourseDivision, Student, AttendanceStatus } from '../../types/school';
 import { useDeviceType } from '../../hooks/useDeviceType';
@@ -30,6 +33,7 @@ import {
   saveCourseAttendance,
   generateCourseAttendanceCSV,
   getStudentAttendanceStats,
+  removeStudent,
 } from '../../lib/schoolStorage';
 
 interface AttendanceControlProps {
@@ -37,6 +41,7 @@ interface AttendanceControlProps {
   selectedDate: string;
   onDateChange: (date: string) => void;
   onAttendanceSaved?: () => void;
+  onStudentDeleted?: () => void;
 }
 
 export const AttendanceControl: React.FC<AttendanceControlProps> = ({
@@ -44,6 +49,7 @@ export const AttendanceControl: React.FC<AttendanceControlProps> = ({
   selectedDate,
   onDateChange,
   onAttendanceSaved,
+  onStudentDeleted,
 }) => {
   const [students, setStudents] = useState<Student[]>([]);
   const [attendanceMap, setAttendanceMap] = useState<
@@ -52,6 +58,41 @@ export const AttendanceControl: React.FC<AttendanceControlProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [savedNotice, setSavedNotice] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const confirmDeleteStudent = async () => {
+    if (!studentToDelete) return;
+    const target = studentToDelete;
+    setIsDeleting(true);
+
+    try {
+      // 1. Remove from local storage cache
+      removeStudent(target.id);
+
+      // 2. Remove from PostgreSQL backend API
+      if (target.id_estudiante) {
+        await fetch(`/api/estudiantes/${target.id_estudiante}`, { method: 'DELETE' });
+      }
+
+      // 3. Update local component state
+      setStudents((prev) => prev.filter((s) => s.id !== target.id));
+      setAttendanceMap((prev) => {
+        const copy = { ...prev };
+        delete copy[target.id];
+        return copy;
+      });
+
+      if (onStudentDeleted) {
+        onStudentDeleted();
+      }
+    } catch (err) {
+      console.warn('Error deleting student:', err);
+    } finally {
+      setIsDeleting(false);
+      setStudentToDelete(null);
+    }
+  };
 
   // Load students and attendance records whenever course or date changes
   useEffect(() => {
@@ -398,8 +439,8 @@ export const AttendanceControl: React.FC<AttendanceControlProps> = ({
                     </div>
                   </div>
 
-                  {/* 4 Status Choice Buttons - Fully responsive & touch-friendly */}
-                  <div className="grid grid-cols-4 sm:flex sm:items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto">
+                  {/* Status Choice Buttons (P, A, T, AJ) and Delete Student Button (-) */}
+                  <div className="grid grid-cols-5 sm:flex sm:items-center gap-1.5 sm:gap-2 shrink-0 w-full sm:w-auto">
                     {/* Presente [P] */}
                     <button
                       type="button"
@@ -462,6 +503,18 @@ export const AttendanceControl: React.FC<AttendanceControlProps> = ({
                       <FileCheck2 className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
                       <span className="text-[11px] sm:text-xs">AJ</span>
                       <span className="hidden md:inline font-normal">Justif.</span>
+                    </button>
+
+                    {/* Eliminar estudiante al lado de AJ [-] */}
+                    <button
+                      type="button"
+                      onClick={() => setStudentToDelete(student)}
+                      className="h-11 sm:h-9 px-2 sm:px-2.5 rounded-xl text-xs font-black transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 cursor-pointer touch-manipulation bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 dark:text-rose-300 dark:border-rose-800 hover:scale-105 active:scale-95"
+                      title={`Eliminar a ${student.lastName}, ${student.firstName} (-)`}
+                      aria-label={`Eliminar estudiante ${student.lastName}, ${student.firstName}`}
+                    >
+                      <Minus className="w-4 h-4 stroke-[3]" />
+                      <span className="text-[11px] sm:text-xs font-black">-</span>
                     </button>
                   </div>
 
@@ -548,6 +601,66 @@ export const AttendanceControl: React.FC<AttendanceControlProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ================= MODAL DE CONFIRMACIÓN DE ELIMINACIÓN ================= */}
+      {studentToDelete && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  ¿Eliminar estudiante?
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Esta acción eliminará al alumno de la lista y su historial de asistencia.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 space-y-1 text-xs">
+              <p className="text-slate-800 dark:text-slate-200">
+                <span className="font-semibold text-slate-500">Estudiante: </span>
+                <span className="font-bold">{studentToDelete.lastName}, {studentToDelete.firstName}</span>
+              </p>
+              <p className="text-slate-800 dark:text-slate-200">
+                <span className="font-semibold text-slate-500">DNI: </span>
+                <span className="font-mono">{studentToDelete.dni}</span>
+              </p>
+              <p className="text-slate-800 dark:text-slate-200">
+                <span className="font-semibold text-slate-500">Curso: </span>
+                <span>{course.displayName}</span>
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteStudent}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'Eliminando...' : 'Eliminar Alumno'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

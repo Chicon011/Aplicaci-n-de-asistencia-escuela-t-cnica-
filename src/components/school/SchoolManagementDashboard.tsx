@@ -14,7 +14,7 @@ import {
   Cpu,
 } from 'lucide-react';
 import { AcademicYear, CourseDivision } from '../../types/school';
-import { getCourses, initSchoolStorage, resetToDefault30Students } from '../../lib/schoolStorage';
+import { getCourses, initSchoolStorage, resetToDefault30Students, syncWithServer } from '../../lib/schoolStorage';
 import { CourseSelector } from './CourseSelector';
 import { AttendanceControl } from './AttendanceControl';
 import { StudentListView } from './StudentListView';
@@ -73,6 +73,11 @@ export const SchoolManagementDashboard: React.FC<SchoolManagementDashboardProps>
 
   useEffect(() => {
     refreshCourses();
+    syncWithServer()
+      .then(() => {
+        refreshCourses();
+      })
+      .catch(() => {});
   }, []);
 
   const safeCourses = Array.isArray(courses) ? courses : [];
@@ -223,6 +228,7 @@ export const SchoolManagementDashboard: React.FC<SchoolManagementDashboardProps>
               selectedDate={currentDate}
               onDateChange={(d) => setCurrentDate(d)}
               onAttendanceSaved={refreshCourses}
+              onStudentDeleted={refreshCourses}
             />
           </div>
         )}
